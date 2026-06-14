@@ -222,7 +222,7 @@ Synthesising the three themes and the practice review reveals a clear and specif
 
 The conceptual framework that guides the empirical work links four components in sequence. Raw Uzbek news text is first transformed by a **preprocessing layer** (script normalisation, cleaning, tokenisation, stop-word removal and morphological simplification). The cleaned text is converted by a **feature-representation layer** into TF-IDF vectors. These vectors are consumed by a **modelling layer** containing the five classical classifiers, each tuned by cross-validation. Finally, an **evaluation layer** measures every model with the five metrics under identical splits, enabling a controlled comparison whose only varying factor is the choice of algorithm. This framework — illustrated conceptually in Figure 1 — operationalises the research question by isolating model choice as the independent variable and classification performance as the dependent variable.
 
-[[CAPTION]] Figure 1. Conceptual framework linking the preprocessing, feature, modelling and evaluation layers (see code/results/figures/).
+[[FIGURE:figures/fig01_conceptual.png|Figure 1. Conceptual framework linking the preprocessing, feature, modelling and evaluation layers.]]
 
 ## 2.7 Summary of the Literature Review
 
@@ -256,7 +256,7 @@ The project was decomposed into five work packages, each broken into concrete ta
 4. WP4 — Experimentation and Analysis: run experiments; compute the five metrics; generate figures; analyse and compare results.
 5. WP5 — Reporting and Defence: write the report; prepare the presentation; rehearse the defence; submit.
 
-[[CAPTION]] Figure 2. Work Breakdown Structure of the project (see code/results/figures/).
+[[FIGURE:figures/fig02_wbs.png|Figure 2. Work Breakdown Structure of the project.]]
 
 ### 3.4.2 Gantt Chart and Timeline
 
@@ -272,7 +272,7 @@ The project was scheduled across an eight-week (two-month) window, consistent wi
 | 7 | Results analysis; figures; draft report | WP4–WP5 |
 | 8 | Finalise report; presentation; rehearsal | WP5 |
 
-[[CAPTION]] Figure 3. Gantt chart of the two-month project timeline (see code/results/figures/).
+[[FIGURE:figures/fig03_gantt.png|Figure 3. Gantt chart of the two-month project timeline.]]
 
 ### 3.4.3 Milestones and Critical Path
 
@@ -352,7 +352,9 @@ Preprocessing was the most consequential stage, given Uzbek's morphological rich
 
 ### 4.1.4 Feature Representation
 
-Cleaned text was converted to **TF-IDF** vectors. After experimentation, the configuration adopted used unigrams and bigrams (n-gram range 1–2), a minimum document frequency of three (discarding extremely rare terms), sub-linear term-frequency scaling and a capped vocabulary of approximately 20,000 features. This configuration balances expressiveness against sparsity, capturing short multi-word cues (such as characteristic phrasing in fabricated articles) without exploding dimensionality.
+Cleaned text was converted to **TF-IDF** vectors. After experimentation, the configuration adopted used unigrams and bigrams (n-gram range 1–2), a minimum document frequency of three (discarding extremely rare terms), sub-linear term-frequency scaling and a capped vocabulary of approximately 20,000 features. This configuration balances expressiveness against sparsity, capturing short multi-word cues (such as characteristic phrasing in fabricated articles) without exploding dimensionality. The complete end-to-end pipeline, from raw text to evaluated model, is shown in Figure 4.
+
+[[FIGURE:figures/fig04_pipeline.png|Figure 4. End-to-end machine-learning pipeline architecture.]]
 
 ## 4.2 Analytical Techniques
 
@@ -379,9 +381,9 @@ Five complementary metrics were computed for every model, all averaged across th
 
 The corpus comprised 4,200 documents balanced equally between the two classes (Figure 5). Document-length analysis (Figure 6) showed that real articles were on average somewhat longer and more lexically varied, whereas a subset of fake items were short, sensational and repetitive — a difference that the TF-IDF representation is able to exploit. After preprocessing and feature extraction, the effective vocabulary stabilised at roughly 20,000 terms.
 
-[[CAPTION]] Figure 5. Class distribution of the Uzbek news corpus (see code/results/figures/).
+[[FIGURE:figures/fig05_class_distribution.png|Figure 5. Class distribution of the Uzbek news corpus.]]
 
-[[CAPTION]] Figure 6. Document-length distribution for real and fake articles (see code/results/figures/).
+[[FIGURE:figures/fig06_doclen.png|Figure 6. Document-length distribution for real and fake articles.]]
 
 ### 4.3.2 Overall Model Performance
 
@@ -396,7 +398,7 @@ Table 6 reports the cross-validated performance of all five models across the fi
 
 [[CAPTION]] Table 6. Cross-validated performance of the five models across five metrics.
 
-[[CAPTION]] Figure 7. Comparison of the five models across the five evaluation metrics (see code/results/figures/).
+[[FIGURE:figures/fig07_model_comparison.png|Figure 7. Comparison of the five models across the five evaluation metrics.]]
 
 The **Linear Support Vector Machine** delivered the best results on four of the five metrics, achieving an F1-score of 0.912 and an ROC-AUC of 0.962. **Logistic Regression** was a close second (F1 = 0.900), confirming that linear discriminative models are well matched to high-dimensional sparse TF-IDF features. **Random Forest** performed solidly (F1 = 0.884) but did not surpass the linear models, consistent with the literature that tree ensembles offer no special advantage on very high-dimensional sparse text. **Multinomial Naïve Bayes** achieved the highest *recall* (0.888), reflecting its tendency to flag items as fake, but lower precision dragged its F1 to 0.874. **k-Nearest Neighbours** was clearly the weakest (F1 = 0.804), as expected: distance-based classification degrades in high-dimensional sparse spaces where the notion of nearest neighbour becomes less meaningful (the "curse of dimensionality").
 
@@ -411,9 +413,9 @@ The per-class breakdown of the best model (Linear SVM) is given in Table 7, and 
 
 [[CAPTION]] Table 7. Per-class precision, recall and F1 for the best model (Linear SVM).
 
-[[CAPTION]] Figure 8. ROC curves for all five classifiers (see code/results/figures/).
+[[FIGURE:figures/fig08_roc.png|Figure 8. ROC curves for all five classifiers.]]
 
-[[CAPTION]] Figure 9. Confusion matrix of the best-performing model, Linear SVM (see code/results/figures/).
+[[FIGURE:figures/fig09_confusion.png|Figure 9. Confusion matrix of the best-performing model, Linear SVM.]]
 
 ### 4.3.4 Computational Cost
 
@@ -432,7 +434,7 @@ Because efficiency is part of the project's argument for classical models, train
 
 Three clear patterns emerge. First, the **two linear discriminative models (SVM and Logistic Regression) lead**, separated by less than one F1 point, supporting hypothesis H1. Second, **k-Nearest Neighbours trails the field by a wide margin** (over ten F1 points behind the leader), confirming the theoretical expectation that instance-based methods struggle in sparse high-dimensional text spaces. Third, **the best classical models combine high accuracy with negligible computational cost**, training in seconds on commodity hardware — the practical advantage that motivates their use in low-resource settings. A supplementary sensitivity analysis (Figure 10) showed that F1 rose with TF-IDF vocabulary size up to roughly 20,000 features and then plateaued, indicating that the chosen configuration captures most of the available signal. Taken together, these patterns provide a direct, evidence-based answer to the research question, elaborated and interpreted in Chapter 5.
 
-[[CAPTION]] Figure 10. Effect of TF-IDF vocabulary size on F1-score (see code/results/figures/).
+[[FIGURE:figures/fig10_vocab.png|Figure 10. Effect of TF-IDF vocabulary size on F1-score.]]
 
 
 

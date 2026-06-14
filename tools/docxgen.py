@@ -326,6 +326,8 @@ def _estimate_pages(blocks):
             add(len(b["rows"]) * 1.4 + 2)
         elif t == "caption":
             add(1.5)
+        elif t == "image":
+            add(13)
         elif t == "toc":
             add(toc_lines)
     return entries
@@ -335,6 +337,58 @@ def _caption(text):
     return ("<w:p>%s%s</w:p>"
             % (_ppr(align="center", spacing_after=160, line=240),
                _runs_from_text(text, base_size=22, italic=True)))
+
+
+def _collect_images(blocks):
+    """Assign relationship id, media name and EMU dimensions to each image
+    block (mutating the block dicts). Returns the list of image blocks."""
+    import struct
+    imgs = []
+    idx = 0
+    for b in blocks:
+        if b.get("type") == "image":
+            idx += 1
+            with open(b["path"], "rb") as f:
+                head = f.read(24)
+            w = struct.unpack(">I", head[16:20])[0]
+            h = struct.unpack(">I", head[20:24])[0]
+            width_in = b.get("width_in", 5.9)
+            cx = int(width_in * 914400)
+            cy = int(cx * h / w)
+            b["_rid"] = "rId%d" % (idx + 9)
+            b["_media"] = "image%d.png" % idx
+            b["_cx"] = cx
+            b["_cy"] = cy
+            b["_idx"] = idx
+            imgs.append(b)
+    return imgs
+
+
+def _image(b):
+    idx = b["_idx"]
+    return (
+        '<w:p><w:pPr><w:jc w:val="center"/>'
+        '<w:spacing w:before="160" w:after="40" w:line="240" w:lineRule="auto"/></w:pPr>'
+        '<w:r><w:drawing>'
+        '<wp:inline distT="0" distB="0" distL="0" distR="0">'
+        '<wp:extent cx="%d" cy="%d"/>'
+        '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+        '<wp:docPr id="%d" name="Picture %d"/>'
+        '<wp:cNvGraphicFramePr><a:graphicFrameLocks '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+        '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<pic:nvPicPr><pic:cNvPr id="%d" name="%s"/><pic:cNvPicPr/></pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="%s"/>'
+        '<a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="%d" cy="%d"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+        '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+        % (b["_cx"], b["_cy"], idx, idx, idx, b["_media"], b["_rid"],
+           b["_cx"], b["_cy"])
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -368,6 +422,8 @@ def render_blocks(blocks):
                                b.get("widths")))
         elif t == "caption":
             body.append(_caption(b["text"]))
+        elif t == "image":
+            body.append(_image(b))
         elif t == "pagebreak":
             body.append(_pagebreak())
         elif t == "toc":
@@ -392,7 +448,10 @@ def _document_xml(blocks):
     return (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
-        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
         '<w:body>%s%s</w:body></w:document>'
         % (render_blocks(blocks), SECT_PR)
     )
@@ -477,6 +536,7 @@ CONTENT_TYPES = (
     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
     '<Default Extension="xml" ContentType="application/xml"/>'
+    '<Default Extension="png" ContentType="image/png"/>'
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
     '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
     '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
@@ -491,13 +551,12 @@ RELS = (
     '</Relationships>'
 )
 
-DOC_RELS = (
+DOC_RELS_HEAD = (
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
     '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>'
     '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>'
-    '</Relationships>'
 )
 
 
@@ -512,19 +571,32 @@ def build_document(blocks, out_path):
       {"type":"bullet", "items": [str,...]}
       {"type":"num",    "items": [str,...]}
       {"type":"table",  "rows": [[..],..], "header"?: bool, "widths"?: [..]}
+      {"type":"image",  "path": str, "width_in"?: float}
       {"type":"caption","text": str}
       {"type":"pagebreak"}
       {"type":"toc"}
     """
+    images = _collect_images(blocks)          # assigns _rid/_media/_cx/_cy
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+
+    rels = [DOC_RELS_HEAD]
+    for b in images:
+        rels.append('<Relationship Id="%s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/%s"/>'
+                    % (b["_rid"], b["_media"]))
+    rels.append("</Relationships>")
+    doc_rels = "".join(rels)
+
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", CONTENT_TYPES)
         z.writestr("_rels/.rels", RELS)
-        z.writestr("word/_rels/document.xml.rels", DOC_RELS)
+        z.writestr("word/_rels/document.xml.rels", doc_rels)
         z.writestr("word/document.xml", _document_xml(blocks))
         z.writestr("word/styles.xml", _styles_xml())
         z.writestr("word/numbering.xml", _numbering_xml())
         z.writestr("word/settings.xml", _settings_xml())
+        for b in images:
+            with open(b["path"], "rb") as f:
+                z.writestr("word/media/%s" % b["_media"], f.read())
     return out_path
 
 

@@ -18,12 +18,16 @@ Custom directives (whole-line):
   [[CENTER:bi]] text             centered bold+italic
   [[SIZE:NN]] text               centered text at NN pt
   [[CAPTION]] text               centered italic small caption
+  [[FIGURE:relpath|Caption]]     embed an image followed by a caption
   [[PAGEBREAK]]                  page break
   [[TOC]]                        table-of-contents field
 """
 
+import os
 import re
 import docxgen
+
+_BASE_DIR = "."
 
 
 def _flush_para(buf, blocks):
@@ -48,6 +52,17 @@ def markdown_to_blocks(md):
         # ---- directives ----
         if stripped.startswith("[["):
             _flush_para(para, blocks)
+            # FIGURE is handled separately because its path contains '/'
+            fig = re.match(r"\[\[FIGURE:([^\]|]+)(?:\|(.*?))?\]\]", stripped)
+            if fig:
+                path = fig.group(1).strip()
+                caption = (fig.group(2) or "").strip()
+                abspath = os.path.normpath(os.path.join(_BASE_DIR, path))
+                blocks.append({"type": "image", "path": abspath})
+                if caption:
+                    blocks.append({"type": "caption", "text": caption})
+                i += 1
+                continue
             m = re.match(r"\[\[([A-Z]+)(?::([a-zA-Z0-9]+))?\]\]\s?(.*)", stripped)
             if m:
                 tag, arg, rest = m.group(1), m.group(2), m.group(3)
@@ -139,6 +154,8 @@ def markdown_to_blocks(md):
 
 
 def build_from_markdown(md_path, out_path):
+    global _BASE_DIR
+    _BASE_DIR = os.path.dirname(os.path.abspath(md_path))
     with open(md_path, "r", encoding="utf-8") as f:
         md = f.read()
     blocks = markdown_to_blocks(md)

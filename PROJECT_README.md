@@ -20,7 +20,10 @@ Detection in the Uzbek Language."**
 ## Regenerate the documents
 
 ```bash
-# Thesis  (.md -> .docx)
+# Figures (pure-Python, no matplotlib needed) -> thesis/figures/
+python tools/make_figures.py
+
+# Thesis  (.md -> .docx, embeds the figures)
 python tools/md2docx.py thesis/thesis.md "thesis/Fake_News_Detection_Uzbek_BTEC_Thesis.docx"
 
 # Presentation
