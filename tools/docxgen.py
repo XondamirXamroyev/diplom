@@ -215,18 +215,120 @@ def _table(rows, header=True, widths=None):
     return "".join(out)
 
 
-def _toc():
-    """Insert a Table of Contents field (Word updates it on open / F9)."""
-    return (
-        '<w:p><w:pPr><w:spacing w:after="120" w:line="%d" w:lineRule="auto"/>'
-        '</w:pPr>'
-        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
-        '<w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r>'
-        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-        '<w:r><w:rPr><w:rFonts w:ascii="%s" w:hAnsi="%s"/><w:sz w:val="%d"/></w:rPr>'
-        '<w:t xml:space="preserve">Right-click and choose "Update Field" to build the table of contents.</w:t></w:r>'
-        '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
-        % (LINE_15, FONT, FONT, BODY_HALFPT))
+# Right tab position for TOC dot leaders (text width = page - margins)
+TOC_TAB = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT
+LINES_PER_PAGE = 32
+
+
+def _toc_entry_runs(text, page, level, with_field=None):
+    """Build the runs for a single TOC entry: text <tab+dotleader> page.
+
+    with_field: None, "begin" (this entry opens the field), or
+    "end" (this entry closes the field).
+    """
+    bold = level == 0
+    runs = []
+    if with_field == "begin":
+        runs.append('<w:r><w:fldChar w:fldCharType="begin"/></w:r>')
+        runs.append('<w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r>')
+        runs.append('<w:r><w:fldChar w:fldCharType="separate"/></w:r>')
+    runs.append(_run(text, BODY_HALFPT, bold=bold))
+    runs.append('<w:r><w:rPr><w:rFonts w:ascii="%s" w:hAnsi="%s"/>'
+                '<w:sz w:val="%d"/></w:rPr><w:tab/></w:r>' % (FONT, FONT, BODY_HALFPT))
+    runs.append(_run(str(page), BODY_HALFPT, bold=bold))
+    if with_field == "end":
+        runs.append('<w:r><w:fldChar w:fldCharType="end"/></w:r>')
+    return "".join(runs)
+
+
+def _toc(entries):
+    """Insert a fully populated Table of Contents.
+
+    `entries` is a list of (level, text, page). The result is a live Word TOC
+    field whose cached content already lists every heading with dot leaders and
+    page numbers, so it displays immediately and still updates (F9) in Word.
+    """
+    if not entries:
+        return ""
+    out = []
+    n = len(entries)
+    for i, (level, text, page) in enumerate(entries):
+        style = "TOC%d" % (level + 1)
+        if i == 0:
+            field = "begin"
+        elif i == n - 1:
+            field = "end"
+        else:
+            field = None
+        ppr = ('<w:pPr><w:pStyle w:val="%s"/>'
+               '<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="%d"/></w:tabs>'
+               '<w:spacing w:after="60" w:line="%d" w:lineRule="auto"/></w:pPr>'
+               % (style, TOC_TAB, LINE_15))
+        out.append("<w:p>%s%s</w:p>"
+                   % (ppr, _toc_entry_runs(text, page, level, field)))
+    return "".join(out)
+
+
+def _estimate_pages(blocks):
+    """Estimate the page on which each heading begins, accounting for the
+    H1 page-breaks and explicit page breaks. Used to pre-fill the TOC; Word
+    recomputes exact numbers when the field is updated."""
+    headings_total = sum(1 for b in blocks if b["type"] in ("h1", "h2", "h3"))
+    toc_lines = headings_total + 3
+
+    def words(s):
+        return max(1, len(s.split()))
+
+    page = 1
+    line = 0.0
+    entries = []
+
+    def add(cost):
+        nonlocal page, line
+        line += cost
+        while line > LINES_PER_PAGE:
+            line -= LINES_PER_PAGE
+            page += 1
+
+    for b in blocks:
+        t = b["type"]
+        if t == "pagebreak":
+            page += 1
+            line = 0.0
+        elif t == "title":
+            add(4)
+        elif t == "center":
+            add(1.2)
+        elif t == "h1":
+            if line > 0:               # pageBreakBefore behaviour
+                page += 1
+                line = 0.0
+            entries.append((0, b["text"], page))
+            add(2.4)
+        elif t == "h2":
+            if line + 2 > LINES_PER_PAGE:
+                page += 1
+                line = 0.0
+            entries.append((1, b["text"], page))
+            add(2.0)
+        elif t == "h3":
+            if line + 2 > LINES_PER_PAGE:
+                page += 1
+                line = 0.0
+            entries.append((2, b["text"], page))
+            add(2.0)
+        elif t == "p":
+            add(max(1.0, (words(b["text"]) / 12.0)) + 0.6)
+        elif t == "bullet" or t == "num":
+            for it in b["items"]:
+                add(max(1.0, words(it) / 12.0) + 0.3)
+        elif t == "table":
+            add(len(b["rows"]) * 1.4 + 2)
+        elif t == "caption":
+            add(1.5)
+        elif t == "toc":
+            add(toc_lines)
+    return entries
 
 
 def _caption(text):
@@ -239,6 +341,7 @@ def _caption(text):
 # Document assembly
 # ----------------------------------------------------------------------------
 def render_blocks(blocks):
+    toc_entries = _estimate_pages(blocks)
     body = []
     for b in blocks:
         t = b["type"]
@@ -268,7 +371,7 @@ def render_blocks(blocks):
         elif t == "pagebreak":
             body.append(_pagebreak())
         elif t == "toc":
-            body.append(_toc())
+            body.append(_toc(toc_entries))
         else:
             raise ValueError("unknown block type: %r" % t)
     return "".join(body)
@@ -323,6 +426,19 @@ def _styles_xml():
         '<w:basedOn w:val="Normal"/><w:next w:val="Normal"/>'
         '<w:pPr><w:keepNext/><w:outlineLvl w:val="2"/></w:pPr>'
         '<w:rPr><w:rFonts w:ascii="%s" w:hAnsi="%s"/><w:b/><w:i/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr></w:style>'
+        # TOC 1 / 2 / 3
+        '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/>'
+        '<w:basedOn w:val="Normal"/><w:next w:val="Normal"/>'
+        '<w:pPr><w:spacing w:after="60"/></w:pPr>'
+        '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/><w:b/></w:rPr></w:style>'
+        '<w:style w:type="paragraph" w:styleId="TOC2"><w:name w:val="toc 2"/>'
+        '<w:basedOn w:val="Normal"/><w:next w:val="Normal"/>'
+        '<w:pPr><w:spacing w:after="60"/><w:ind w:left="360"/></w:pPr>'
+        '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/></w:rPr></w:style>'
+        '<w:style w:type="paragraph" w:styleId="TOC3"><w:name w:val="toc 3"/>'
+        '<w:basedOn w:val="Normal"/><w:next w:val="Normal"/>'
+        '<w:pPr><w:spacing w:after="60"/><w:ind w:left="720"/></w:pPr>'
+        '<w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/></w:rPr></w:style>'
         '</w:styles>'
         % (base_rpr, LINE_15, base_rpr, FONT, FONT, FONT, FONT, FONT, FONT)
     )
