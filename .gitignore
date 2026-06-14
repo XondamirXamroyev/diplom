@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+code/results/
+!code/results/.gitkeep
+.DS_Store
